@@ -13,8 +13,8 @@ lxml==4.9.1
 matplotlib==3.7.1
 millify
 nltk==3.7
-numpy>=1.24.0
-pandas>=2.0.0
+numpy==1.22.4
+pandas==2.0.1
 pandas_datareader==0.10.0
 pandas_ta==0.3.14b0
 pip==23.3.2
@@ -30,9 +30,10 @@ sentencepiece==0.2.0
 streamlit==1.25.0
 streamlit_on_Hover_tabs==1.0.1
 ta==0.10.2
-tqdm==4.64.0
+torch>=2.0.0
 transformers==4.43.2
+tqdm==4.64.0
 tweepy==4.12.1
-xlsxwriter==3.0.3
 yahoo_fin==0.8.9.1
-yfinance>=0.2.54
+yfinance==0.2.54
+xlsxwriter==3.0.3
