@@ -5,7 +5,6 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
-import talib
 import requests
 from io import BytesIO
 from bs4 import BeautifulSoup
@@ -16,8 +15,6 @@ from plotly.subplots import make_subplots
 from pandas.tseries.offsets import BDay
 from app import get_news_yahoo, score_news, color_cells
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
-
-api_key = st.secrets["fmp"]["api_key"]
 
 
 def set_sidebar_selectbox_font_size(font_size):
@@ -65,7 +62,8 @@ def change_progress_bar_color():
         unsafe_allow_html=True
     )
 
-
+def get_stock_industry(selected_ticker):
+    return "Technology"
 
 def create_download_link(data, filename):
     csv = data.to_csv(index=False)
@@ -101,7 +99,6 @@ def get_stock_industry(symbol):
     except Exception as e:
         print(f"Error fetching industry for {symbol}: {str(e)}")
         return 'N/A'
-
 
 
 
@@ -165,6 +162,22 @@ def color_cells(val):
         color = 'navy'
     return 'color: %s' % color
 
+def score_news(parsed_news_df):
+    # Instantiate the sentiment intensity analyzer
+    vader = SentimentIntensityAnalyzer()
+
+    # Iterate through the headlines and get the polarity scores using vader
+    scores = parsed_news_df['title'].apply(vader.polarity_scores).tolist()
+
+    # Convert the 'scores' list of dicts into a DataFrame
+    scores_df = pd.DataFrame(scores)
+
+    # Join the DataFrames of the news and the list of dicts
+    parsed_and_scored_news = parsed_news_df.join(scores_df, rsuffix='_right')
+    parsed_and_scored_news = parsed_and_scored_news.rename(
+        columns={"compound": "sentiment_score"})
+
+    return parsed_and_scored_news
 
 # Add this function to your code
 def create_download_link(df, filename):
@@ -174,204 +187,448 @@ def create_download_link(df, filename):
     return download_link
 
 
+def create_candlestick_chart(selected_ticker):
 
+    # Checkbox to toggle live updates
+    live_updates = st.checkbox("Live Price (Other charts will be disabled!)")
 
-# ─────────────────────────────
-# FMP Fetch
-# ─────────────────────────────
-def fetch_stock_history_fmp(ticker, start_date, end_date):
-    import requests
+    if not live_updates:
+        # Interval required 1 minute
+        df = yf.download(tickers=selected_ticker, period='1d', interval='1m')
+        # Calculate Exponential Moving Averages (EMA) for 20 and 50 days
+        ema20 = df['Close'].ewm(span=20).mean()
+        ema200 = df['Close'].ewm(span=200).mean()
 
-    try:
-        api_key = st.secrets["fmp"]["api_key"]
-    except:
-        st.error("Please set up your FMP API key in secrets.toml")
-        st.stop()
+        # Create checkboxes for each trace line in the chart next to each other
+        col1, col2, col3 = st.columns([1, 1, 1])
 
-    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
-    params = {
-        "from": pd.to_datetime(start_date).strftime("%Y-%m-%d"),
-        "to": pd.to_datetime(end_date).strftime("%Y-%m-%d"),
-        "apikey": api_key
-    }
+        with col1:
+            show_candlestick = st.checkbox(f'{selected_ticker}', value=True)
 
-    try:
-        response = requests.get(url, params=params)
-        data = response.json()
-        if "historical" not in data:
-            return pd.DataFrame()
+        with col2:
+           show_ema200 = st.checkbox('200 Day', value=True)
 
-        df = pd.DataFrame(data["historical"])
-        df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
-        df.sort_index(inplace=True)
+        with col3:
+           show_sp500 = st.checkbox('S&P', value=True)
 
-        df.rename(columns=str.title, inplace=True)  # Capitalize column names
-        df['close'] = df['Close']  # Add lowercase alias for indicator calculations
+        # Create a function to generate the figure based on selected checkboxes
+        def generate_figure():
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-        return df
+            # Add candlestick trace to the primary Y-axis
+            if show_candlestick:
+                fig.add_trace(go.Candlestick(x=df.index,
+                                open=df['Open'],
+                                high=df['High'],
+                                low=df['Low'],
+                                close=df['Close'],
+                                text=df['Close'],  # Text for hover tooltips (price)
+                                hoverinfo='x+text',  # Show date and price on hover
+                                name=f'{selected_ticker}',
+                                yaxis='y', # Display on the primary Y-axis
+                                increasing_fillcolor='green',  # Color for increasing candles (default is green)
+                                decreasing_fillcolor='maroon',  # Set fill color to maroon for decreasing candles
+                                increasing_line_width=2,  # Adjust width for increasing candles
+                                decreasing_line_width=2,  # Adjust width for decreasing candles
+                                decreasing_line_color='maroon'  # Set border color to maroon for decreasing candles
 
-    except Exception as e:
-        print(f"Error fetching data for {ticker}: {e}")
-        return pd.DataFrame()
-def calculate_technical_indicators(df):
-    if df.empty:
-        return df
+                ))
 
-    df['close'] = pd.to_numeric(df['close'], errors='coerce')
-    df = df.dropna(subset=['close'])
+            # Add moving average traces to the secondary Y-axis with thinner lines
+            if show_ema200:
+                fig.add_trace(go.Scatter(x=df.index, y=ema200, mode='lines', name='200 Day', line=dict(color='red', dash='dot', width=2)))
 
-    if len(df) > 26:
-        df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(df['close'], 12, 26, 9)
-    if len(df) > 14:
-        df['rsi'] = talib.RSI(df['close'], 14)
-    if len(df) > 20:
-        bb_upper, bb_middle, bb_lower = talib.BBANDS(df['close'], timeperiod=20)
-        df['bb_upper'] = bb_upper
-        df['bb_middle'] = bb_middle
-        df['bb_lower'] = bb_lower
+            # Add S&P 500 trace to the secondary Y-axis without showing its values
+            if show_sp500:
+                sp500_df = yf.download('^GSPC',  period='1d', interval='1m')
+                fig.add_trace(go.Scatter(x=sp500_df.index, y=sp500_df['Close'], mode='lines', name='S&P 500', line=dict(color='blue', width=1)), secondary_y=True)
 
-    return df
+            fig.update_layout(
+                xaxis_title='Date',
+                yaxis_title='Price',
+                autosize=True,
+                #width=800,
+                xaxis_rangeslider_visible=True,  # Add slider for adjusting time period
+                yaxis_side='left',  # Display Y-axis on the right side
+                legend=dict(x=0.2, y=1.1, orientation='h'),  # Move the legend to the top of the chart and set orientation to horizontal
+                height=400,  # Increase the chart height
+                margin=dict(t=40),  # Add margin at the top to move the chart up
+                showlegend=False if not (show_candlestick or show_ema200 or show_sp500) else True,
+             #yaxis=dict(range=[0, max_y_limit]),  # Set the y-axis range
+            )
 
+            # Label for the primary Y-axis (left side)
+            fig.update_yaxes(title_text='Price', showgrid=True)
+            fig.update_yaxes(showgrid=False)
 
-def create_macd_chart(df):
-    if df.empty or 'macd' not in df.columns:
-        return None
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['macd'], name='MACD', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['macd_signal'], name='Signal', line=dict(color='orange')))
-    fig.add_trace(go.Bar(x=df.index, y=df['macd_hist'], name='Histogram',
-                         marker_color=['green' if v >= 0 else 'red' for v in df['macd_hist']]))
-    fig.update_layout(title='MACD (12,26,9)', height=300, margin=dict(l=20, r=20, t=40, b=20),
-                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    return fig
+            # Label for the secondary Y-axis (right side)
+            fig.update_yaxes(title_text='EMA', showgrid=False, secondary_y=True)
+            fig.update_yaxes(showgrid=False)
 
-def create_rsi_chart(df):
-    if df.empty or 'rsi' not in df.columns:
-        return None
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['rsi'], name='RSI', line=dict(color='purple')))
-    fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
-    fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
-    fig.update_layout(title='RSI (14)', height=300, yaxis_range=[0, 100],
-                      margin=dict(l=20, r=20, t=40, b=20))
-    return fig
-# ─────────────────────────────
-# Chart Generator
-# ─────────────────────────────
-def generate_charts(start_date, end_date, selected_ticker, date_range_option):
+            return fig
 
+        # Generate and display the interactive candlestick chart with moving averages and S&P 500 on the secondary Y-axis
+        chart_fig = generate_figure()
+        st.plotly_chart(chart_fig, use_container_width=True)
 
-
-
-    # Cache
-    cache_key = f"{selected_ticker}_{start_date}_{end_date}_{date_range_option}"
-    if "stock_data_cache" not in st.session_state:
-        st.session_state.stock_data_cache = {}
-
-    if cache_key in st.session_state.stock_data_cache:
-        df = st.session_state.stock_data_cache[cache_key]
     else:
-        df = fetch_stock_history_fmp(selected_ticker, start_date=start_date, end_date=end_date)
-        df = calculate_technical_indicators(df)
-        st.session_state.stock_data_cache[cache_key] = df
+        # Function to fetch and update stock data
+        def fetch_stock_data(selected_ticker):
+            selected_stock = yf.Ticker(selected_ticker)
+            return selected_stock.history(period='1d', interval='1m')
 
-    if df.empty:
-        st.warning("No data available for this timeframe.")
-        return
+        # Calculate the x-axis range for the entire trading day (from 9:30 AM to 4 PM)
+        market_open_time = datetime.now().replace(hour=9, minute=00, second=0, microsecond=0)
+        market_close_time = datetime.now().replace(hour=17, minute=0, second=0, microsecond=0)
+        x_axis_range = [market_open_time, market_close_time]
 
-    # Plot Price Trend
-    fig_price = go.Figure()
-    fig_price.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["Open"],
-        high=df["High"],
-        low=df["Low"],
-        close=df["Close"],
-        name="Price",
-        increasing_line_color="green",
-        decreasing_line_color="red"
-    ))
+        # Create an initial empty subplot with two Y-axes for the live chart
+        fig_live = make_subplots(rows=1, cols=1, shared_xaxes=True, specs=[[{"secondary_y": True}]])
+        fig_live.add_trace(go.Scatter(x=[], y=[], name=f'{selected_ticker} Price', line=dict(color='blue')), secondary_y=False)
+        fig_live.add_trace(go.Scatter(x=[], y=[], name='S&P 500', line=dict(color='green')), secondary_y=True)
 
-    if st.sidebar.checkbox("Show 90-day EMA", value=True):
-        df["EMA_90"] = df["Close"].ewm(span=90, adjust=False).mean()
-        fig_price.add_trace(go.Scatter(
-            x=df.index,
-            y=df["EMA_90"],
-            mode='lines',
-            name="90-day EMA",
-            line=dict(color='blue', dash='dot', width=1.5)
-        ))
+        # Configure the layout
+        fig_live.update_xaxes(title_text='Time', range=x_axis_range)  # Set the x-axis range
+        fig_live.update_yaxes(title_text=f'{selected_ticker} Price', secondary_y=False)
+        fig_live.update_yaxes(title_text='S&P 500', secondary_y=True)
 
-    if st.sidebar.checkbox("Show Bollinger Bands", value=True):
-        if 'bb_upper' in df.columns and 'bb_lower' in df.columns:
-            fig_price.add_trace(go.Scatter(
-                x=df.index,
-                y=df["bb_upper"],
-                mode='lines',
-                name="Upper Band",
-                line=dict(color='gray', width=1)
-            ))
-            fig_price.add_trace(go.Scatter(
-                x=df.index,
-                y=df["bb_lower"],
-                mode='lines',
-                name="Lower Band",
-                line=dict(color='gray', width=1)
-            ))
 
-    fig_price.update_layout(
-        title=f"{selected_ticker} Price Trend ({date_range_option})",
-        xaxis_title="Date",
-        yaxis_title="Price",
-        xaxis_rangeslider_visible=True,
-        legend=dict(orientation="h", x=0.5, y=1.15, xanchor='center'),
-        margin=dict(t=40, l=10, r=10, b=10)
+        # Create an empty container for the live chart
+        chart_container_live = st.empty()
+
+        # Function to create the live updating stock chart
+        def create_live_stock_chart(selected_ticker):
+            while live_updates:  # Keep updating while live updates are enabled
+                ticker_history = fetch_stock_data(selected_ticker)
+
+                # Update the Plotly chart with the latest data and x-axis range
+                fig_live = make_subplots(rows=1, cols=1, shared_xaxes=True, specs=[[{"secondary_y": True}]])
+                fig_live.add_trace(go.Scatter(x=ticker_history.index, y=ticker_history['Close'], mode='lines+markers', name=f'{selected_ticker} Price', line=dict(color='blue')), secondary_y=False)
+
+                # Fetch S&P 500 data
+                sp500_data = yf.download('^GSPC', period='1d', interval='1m')
+
+                # Add the S&P 500 data to the live chart
+                fig_live.add_trace(go.Scatter(x=sp500_data.index, y=sp500_data['Close'], mode='lines+markers', name='S&P 500', line=dict(color='green')), secondary_y=True)
+
+                # Update the legend to be in the center and on top
+                fig_live.update_layout(
+                    width=800,
+                    legend=dict(
+                        orientation="h",  # Set the orientation to horizontal (top)
+                        x=0.5,  # Set the legend's x-coordinate to the center
+                        y=1.2,  # Set the legend's y-coordinate just above the chart
+                    )
+                )
+
+                fig_live.update_xaxes(title_text='Time', range=x_axis_range)  # Set the x-axis range
+                fig_live.update_yaxes(title_text=f'{selected_ticker} Price', secondary_y=False)
+                fig_live.update_yaxes(title_text='S&P 500', secondary_y=True)
+
+                # Reduce line and marker thickness
+                fig_live.update_traces(
+                    line=dict(width=1),  # Adjust line thickness
+                    marker=dict(size=3), # Adjust marker size
+                )
+
+                fig_live.update_xaxes(showgrid=False)
+                fig_live.update_yaxes(showgrid=False)
+
+                # Update the chart in the Streamlit app
+                chart_container_live.plotly_chart(fig_live)
+
+                # Sleep for 10 seconds before fetching new data
+                time.sleep(5)
+
+        # Display the live updating chart when the checkbox is selected
+        create_live_stock_chart(selected_ticker)
+        if st.button("Stop"):
+            st.warning("Live updates are enabled! Please turn it off before pressing stop.")
+# Pass the date_range_option as an argument to generate_charts function
+def generate_charts(ticker_history, start_date, end_date, selected_ticker, date_range_option):
+    # Splitting the container into two columns
+    ema200 = ticker_history['Close'].ewm(span=200).mean()
+    col7, col8 = st.columns([0.3, 0.3])
+
+    with col7:
+        hint_text = hint("This will show you the price trend for the stock you chose and how it is moving compared to the S&P 500 index. You can use the slider bar below the chart to adjust the date range for the trend")
+        st.markdown(
+            f'<div class="title-container" style="margin-top: -1px; "><h2 style="color: navy; font-size: 20px;">Price Trend {hint_text}</h2></div>',
+            unsafe_allow_html=True)
+
+        # Check if the user selects '1D' in the sidebar
+        if date_range_option == '1D':
+            # Call the function to create the candlestick chart with S&P 500 for the selected ticker
+            create_candlestick_chart(selected_ticker, )
+        else:
+            # Continue with the rest of your code for other date range options
+            # Candlestick chart
+
+
+            fig1 = go.Figure(data=[go.Candlestick(x=ticker_history.index,
+                                                  open=ticker_history['Open'],
+                                                  high=ticker_history['High'],
+                                                  low=ticker_history['Low'],
+                                                  close=ticker_history['Close'],
+                                                  name='Price')])
+
+            # Layout for Candlestick chart
+            fig1.update_layout(
+                autosize=True,
+                #width=1200,
+                #height=400,
+                xaxis_title='Date',
+                yaxis_title='Price',
+                xaxis_rangeslider_visible=True,
+                legend=dict(
+                    orientation="h",
+                    x=0.6,
+                    y=1.3,
+                    xanchor='right',
+                    yanchor='top'
+                ),
+                margin=dict(
+                    t=10,  # Adjust the top margin value as per your preference
+                    l=10,
+                    r=10,
+                    b=10
+                )
+            )
+
+            # Add 200-day Exponential Moving Average line to the chart
+          
+            fig1.add_trace(go.Scatter(x=ticker_history.index, y=ema200, mode='lines', name='200 Day', line=dict(color='red', dash='dot', width=2)))
+
+
+
+
+            # Download S&P 500 data
+            sp500_data = yf.download('^GSPC', start=start_date, end=end_date)
+
+            # Add S&P 500 line chart to the second Y-axis
+            fig1.add_trace(go.Scatter(x=sp500_data.index, y=sp500_data['Close'], mode='lines', name='S&P 500', line=dict(color='blue'), yaxis='y2'))
+            # Set the second Y-axis title
+            fig1.update_layout(
+                yaxis2=dict(
+                    title='S&P 500',
+                    overlaying='y',
+                    side='right',
+                    position=1  # Adjust the position as per your preference
+                )
+            )
+
+            fig1.update_xaxes(showgrid=False)  # Turn off x-axis gridlines
+            fig1.update_yaxes(showgrid=False)  # Turn off y-axis gridlines
+
+            # Show Candlestick chart with S&P 500 line in col7
+            st.plotly_chart(fig1, use_container_width=True)
+
+
+
+
+
+    with col8:
+        # Create a title for the chart with the specified style
+        hint_text = hint("This shows you the stock price with a 10 and 20 day MA. If the 10-day moving average crosses above the 20-day moving average, the price will likely fall and the stock must be sold, otherwise, it will be a signal that it is a good opportunity to buy.")
+        st.markdown(
+            f'<div class="title-container" style="margin-top: -2px;"><h2 style="color: navy; font-size: 20px;">Price Trend with Buy/Sell Signals {hint_text}</h2></div>',
+            unsafe_allow_html=True)
+
+        # Calculate 10-day and 20-day moving averages
+        ticker_history['10_MA'] = ticker_history['Close'].rolling(
+            window=10).mean()
+        ticker_history['20_MA'] = ticker_history['Close'].rolling(
+            window=20).mean()
+
+        # Calculate buy and sell signals
+        Trade_Buy = []
+        Trade_Sell = []
+        for i in range(len(ticker_history) - 1):
+            if (ticker_history['10_MA'].values[i] < ticker_history['20_MA'].values[i]) and (
+                    ticker_history['10_MA'].values[i + 1] > ticker_history['20_MA'].values[i + 1]):
+                Trade_Buy.append(ticker_history.index[i])
+            elif (ticker_history['10_MA'].values[i] > ticker_history['20_MA'].values[i]) and (
+                    ticker_history['10_MA'].values[i + 1] < ticker_history['20_MA'].values[i + 1]):
+                Trade_Sell.append(ticker_history.index[i])
+
+        # Create a combined line chart with moving averages using Plotly
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=ticker_history.index,
+                      y=ticker_history['Close'], mode='lines', name='Closing Price'))
+        fig.add_trace(go.Scatter(x=ticker_history.index,
+                      y=ticker_history['10_MA'], mode='lines', name='10-day MA'))
+        fig.add_trace(go.Scatter(x=ticker_history.index,
+                      y=ticker_history['20_MA'], mode='lines', name='20-day MA'))
+        fig.add_trace(go.Scatter(x=Trade_Buy, y=ticker_history.loc[Trade_Buy, 'Close'], mode='markers', name='Buy Signal',
+                                 marker=dict(color='green', size=8)))
+        fig.add_trace(go.Scatter(x=Trade_Sell, y=ticker_history.loc[Trade_Sell, 'Close'], mode='markers', name='Sell Signal',
+                                 marker=dict(color='red', size=8)))
+
+        fig.update_xaxes(showgrid=False)
+        fig.update_yaxes(showgrid=False)
+
+
+        # Calculate the price range
+        price_range = ticker_history['Close'].max() - ticker_history['Close'].min()
+
+# Determine the appropriate dtick based on the price range
+        if price_range < 10:
+           dtick = 1
+        elif price_range < 100:
+            dtick = 20
+        else:
+            dtick = 100
+
+        yaxis_range = [ticker_history['Close'].min() - 10, ticker_history['Close'].max() + 10]
+
+        
+        # Title and layout
+        fig.update_layout(
+            title='',
+            xaxis_title='Date',
+            xaxis=dict(
+                rangeslider=dict(
+                    visible=True
+                ),
+             ),
+            yaxis_title='Price',
+            yaxis=dict(
+                range=yaxis_range,
+                tick0=0,  # Start at 0
+                dtick=dtick,  # Major unit of 10
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=1.2,
+                xanchor="center",
+                x=0.5
+            ),
+            margin=dict(l=40, r=40, t=40, b=30),
+            height=400
+        )
+
+        # Show the Plotly chart
+        st.plotly_chart(fig, use_container_width=True)
+
+    col9, col10 = st.columns([0.3, 0.3])
+
+    with col9:
+        # Create a title for the chart with the specified style
+        hint_text = hint("MACD is the 12-day Exponential Moving Average (EMA) minus the 26-day EMA. A 9-day EMA of MACD is plotted along side to act as a signal line.The MACD-Histogram represents the difference between MACD and  the signal line. The histogram is positive when MACD is above its 9-day EMA and negative when MACD is below its 9-day EMA.")
+        st.markdown(
+            f'<div class="title-container" style="margin-top: -2px;"><h2 style="color: navy; font-size: 20px;">MACD Trend {hint_text}</h2></div>',
+            unsafe_allow_html=True)
+
+        # MACD chart
+        try:
+            fig3 = create_macd_chart(ticker_history)
+            fig3.update_layout(
+                xaxis=dict(
+                    title='Date',
+                    title_standoff=30,  # Distance between the x-axis title and the x-axis itself
+                ),
+                yaxis_title='MACD',
+                legend=dict(x=0.9, y=1.3, xanchor='center', yanchor='top') 
+            ) 
+            st.plotly_chart(fig3, use_container_width=True)
+        except Exception:
+            st.write(
+                "MACD uses default setting for the metrics: 26/12/9 days. Refer to the FAQ for details on MACD")
+
+    with col10:
+        # Create a title for the chart with the specified style
+      # Create a title for the chart with the specified style
+        hint_text = hint("RSI is a momentum oscillator that measures the speed and change of price movements. The RSI oscillates between zero and 100. Traditionally the RSI is considered overbought when above 70 and oversold when below 30. Signals can be generated by looking for divergences and failure swings. RSI can also be used to identify the general trend.")
+        st.markdown(
+            f'<div class="title-container" style="margin-top: -2px;"><h2 style="color: navy; font-size: 20px;">RSI Trend {hint_text}</h2></div>',
+            unsafe_allow_html=True)
+
+        # RSI chart
+        rsi = ta.rsi(ticker_history['Close'])
+        fig4 = go.Figure(
+            data=go.Scatter(x=ticker_history.index, y=rsi, name='RSI', line=dict(color='blue'), line_shape='spline'))
+
+        # Add the horizontal line at RSI=70
+        fig4.add_shape(
+            type="line", line=dict(dash="dot", width=1.5, color="red"),
+            y0=70, y1=70, xref='paper', x0=0, x1=1
+        )
+ 
+        fig4.update_layout(
+            autosize=True,
+            height=500,
+            xaxis_title='Date',
+            yaxis_title='RSI',
+            legend=dict(
+                x=1,
+                y=1,
+                xanchor='right',
+                yanchor='top'
+            )
+        )
+
+
+        fig4.update_xaxes(showgrid=False)  # Turn off x-axis gridlines
+        fig4.update_yaxes(showgrid=False)  # Turn off y-axis gridlines
+
+        st.plotly_chart(fig4, use_container_width=True)
+
+
+
+def create_macd_chart(df, width=900, height=500):
+    # Calculate MACD, Signal line, and Histogram using pandas_ta
+    macd_df = ta.macd(df['Close'])
+    macd = macd_df['MACD_12_26_9']
+    signal = macd_df['MACDs_12_26_9']
+    histogram = macd_df['MACDh_12_26_9']
+
+    # Create a new DataFrame with MACD, Signal line, and Histogram
+    macd_data = pd.DataFrame({
+        'Date': df.index,
+        'MACD': macd,
+        'Signal': signal,
+        'Histogram': histogram
+    })
+
+    # Drop missing or NaN values
+    macd_data = macd_data.dropna()
+
+    # Create Plotly chart for Histogram as bars
+    histogram_chart = go.Bar(x=macd_data['Date'], y=macd_data['Histogram'], name='Histogram', marker=dict(color='blue'))
+
+    # Create Plotly chart for MACD and Signal line
+    macd_chart = go.Scatter(x=macd_data['Date'], y=macd_data['MACD'], name='MACD', line=dict(color='green'))
+    signal_chart = go.Scatter(x=macd_data['Date'], y=macd_data['Signal'], name='Signal', line=dict(color='red'))
+
+    # Create a subplot with two vertical subplots for MACD and Histogram
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05)  # Reduce vertical spacing
+    fig.add_trace(macd_chart, row=1, col=1)
+    fig.add_trace(signal_chart, row=1, col=1)
+    fig.add_trace(histogram_chart, row=2, col=1)
+
+    # Update layout for the subplot
+    fig.update_layout(
+        autosize=True,
+        width=width,
+        height=height,
+        xaxis_title='',
+        yaxis_title='MACD',
+        xaxis_rangeslider_visible=False,
+        legend=dict(
+            x=0.5,  # Adjust x position to move the legend to the center
+            y=1,  # Adjust y position to move the legend to the top
+            xanchor='center',
+            yanchor='top'
+        )
     )
 
-    # MACD and RSI charts using updated logic
-    macd_chart = create_macd_chart(df)
-    rsi_chart = create_rsi_chart(df)
+    fig.update_xaxes(showgrid=False)  # Turn off x-axis gridlines
+    fig.update_yaxes(showgrid=False)  # Turn off y-axis gridlines
 
-    # S&P 500 placeholder chart (replace with actual S&P 500 data if needed)
-    fig_sp500 = go.Figure()
-    fig_sp500.add_trace(go.Scatter(x=df.index, y=df["Close"], name="S&P 500"))
-    fig_sp500.update_layout(title="S&P 500 Trend", height=300)
 
-    # Layout columns
-    col1, col2 = st.columns([0.3, 0.3])
+    return fig
 
-    with col1:
-        st.markdown(
-            f'<div class="title-container" style="margin-top: -1px;"><h2 style="color: navy; font-size: 20px;">Price Trend</h2></div>',
-            unsafe_allow_html=True
-        )
-        st.plotly_chart(fig_price, use_container_width=True, key="price_trend")
-
-    with col2:
-        st.markdown(
-             f'<div class="title-container" style="margin-top: -1px;"><h2 style="color: navy; font-size: 20px;">MACD (12,26,9)</h2></div>',
-             unsafe_allow_html=True
-        )
-        if macd_chart:
-            st.plotly_chart(macd_chart, use_container_width=True, key="macd_chart")
-
-    col3, col4 = st.columns([0.3, 0.3])
-
-    with col3:
-        st.markdown(
-            f'<div class="title-container" style="margin-top: -1px;"><h2 style="color: navy; font-size: 20px;">RSI (14)</h2></div>',
-            unsafe_allow_html=True
-        )
-        if rsi_chart:
-            st.plotly_chart(rsi_chart, use_container_width=True, key="rsi_chart")
-
-    with col4:
-        st.markdown(
-            f'<div class="title-container" style="margin-top: -1px;"><h2 style="color: navy; font-size: 20px;">S&P 500 Trend</h2></div>',
-            unsafe_allow_html=True
-        )
-        st.plotly_chart(fig_sp500, use_container_width=True, key="sp500_chart")
 
 def get_stock_info(ticker):
     # Fetching the web page
@@ -414,43 +671,6 @@ def get_stock_info(ticker):
         "Company Description": display_company_description(ticker)  # Assuming you have this function defined elsewhere
     }
 
-
-
-
-def calculate_stock_sentiment(symbol, api_key, news_limit=10):
-    """
-    Fetches recent news for the stock and calculates average sentiment.
-
-    Parameters:
-        symbol (str): Stock symbol (e.g., "AAPL")
-        api_key (str): FMP API Key
-        news_limit (int): Number of news articles to analyze
-
-    Returns:
-        dict: {'average_sentiment': float, 'article_scores': List[dict]}
-    """
-    url = f"https://financialmodelingprep.com/api/v3/stock_news?tickers={symbol}&limit={news_limit}&apikey={api_key}"
-    try:
-        response = requests.get(url)
-        news_data = response.json()
-
-        analyzer = SentimentIntensityAnalyzer()
-        article_scores = []
-
-        for item in news_data:
-            text = f"{item['title']} {item['text']}"
-            score = analyzer.polarity_scores(text)['compound']
-            article_scores.append({
-                'date': item['publishedDate'],
-                'title': item['title'],
-                'score': score
-            })
-
-        avg_sentiment = sum(a['score'] for a in article_scores) / len(article_scores) if article_scores else 0.0
-        return {'average_sentiment': avg_sentiment, 'article_scores': article_scores}
-
-    except Exception as e:
-        return {'error': str(e)}
 
 def display_stock_data(get_stock_info):
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -679,6 +899,36 @@ def get_table_download_link(df, text, filename):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}.csv" style="background-color: navy; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none;">{text}</a>'
     return href
 
+def calculate_tier(percent_diff):
+    if percent_diff == 0:
+        return 'NA'
+    elif -1 <= percent_diff < 0:
+        return '0%-(1)%'
+    elif -10 <= percent_diff < -1:
+        return '(1%)-(10%)'
+    elif -30 <= percent_diff < -10:
+        return '(10%)-(30%)'
+    elif -40 <= percent_diff < -30:
+        return '(30%)-(40%)'
+    elif -50 <= percent_diff < -40:
+        return '(40%)-(50%)'
+    elif percent_diff <= -50:
+        return '>=(50%)'
+    elif 0 < percent_diff <= 1:
+        return '0%-1%'
+    elif 1 < percent_diff <= 10:
+        return '1%-10%'
+    elif 10 < percent_diff <= 30:
+        return '10%-30%'
+    elif 30 < percent_diff <= 40:
+        return '30%-40%'
+    elif 40 < percent_diff <= 50:
+        return '40%-50%'
+    elif percent_diff > 50:
+        return '>50%'
+    else:
+        return 'NA'
+
 
 def simulate_future_value(symbol, target_percentage, target_dollar_amount, custom_investment=0):
     today = datetime.date.today()
@@ -694,7 +944,7 @@ def simulate_future_value(symbol, target_percentage, target_dollar_amount, custo
         return None
 
     ticker = yf.Ticker(symbol)
-    stock_info = ticker.history(period='1d', interval='1m')
+    stock_info = ticker.history(period="1d")
     stock_info_p = ticker.history(period="2d")
 
 
@@ -730,6 +980,19 @@ def get_last_price(ticker):
     todays_data = stock.history(period='1d')
     historical_data = stock.history(period='2d')
     return todays_data['Close'][0]
+
+#def get_company_description_from_iex(ticker):
+#    IEX_API_KEY = "pk_f06441175c6244478960595f048fa648"
+#    url = f"https://cloud.iexapis.com/stable/stock/{ticker}/company?token={IEX_API_KEY}"
+#    response = requests.get(url)
+#    return response.json().get('description', 'Description not available')
+
+#def get_company_description(ticker):
+#    IEX_API_KEY = "pk_f06441175c6244478960595f048fa648"
+#    url = f"https://cloud.iexapis.com/stable/stock/{ticker}/company?token={IEX_API_KEY}"
+#    response = requests.get(url)
+#    return response.json().get('description', 'Description not available')
+
 
 def get_stock_info(ticker):
     url = f"https://finance.yahoo.com/quote/{ticker}"
@@ -782,6 +1045,61 @@ def display_current_price(col, current_price, previous_close):
         return
 
     
+
+# Function to fetch CPI data and calculate the inflation rates
+def get_inflation_data():
+    headers = {'Content-type': 'application/json'}
+    current_year = datetime.now().year
+    data = json.dumps({
+        "seriesid": ['CUUR0000SA0'],
+        "startyear": str(current_year - 1),
+        "endyear": str(current_year)
+    })
+    response = requests.post('https://api.bls.gov/publicAPI/v1/timeseries/data/', data=data, headers=headers)
+    json_data = json.loads(response.text)
+
+    # Extract CPI data
+    cpi_data = json_data['Results']['series'][0]['data']
+
+    # Get CPI for current month, previous month, and same month last year
+    cpi_current_month = float(cpi_data[0]['value'])
+    cpi_previous_month = float(cpi_data[1]['value'])
+    cpi_same_month_last_year = float(next(item['value'] for item in cpi_data if item['year'] == str(current_year - 1)))
+
+    # Calculate year-over-year inflation rate and month-over-month delta
+    inflation_rate_yoy = ((cpi_current_month - cpi_same_month_last_year) / cpi_same_month_last_year) * 100
+    delta_mom = cpi_current_month - cpi_previous_month
+
+    return inflation_rate_yoy, delta_mom
+
+# Function to create a speedometer chart
+def create_speedometer(value, delta):
+    color, arrow = ("red", "↑") if delta > 0 else ("green", "↓")
+    delta_text = f"<span style='color:{color};'>{arrow}{delta:.2f}</span>"
+    title_text = f"Current Inflation Rate: {value:.2f}% {delta_text}"
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=value,
+        gauge={'axis': {'range': [None, 10]}},
+        number={'suffix': "%", 'font': {'size': 60, 'color': 'black'}},
+        title={'text': title_text, 'font': {'size': 20, 'color': 'black'}}))  # Increased font size for title
+    fig.update_layout(paper_bgcolor="white", width=600, height=400)
+    return fig
+
+# Streamlit app
+def main():
+    #st.title("Inflation Rate Tracker")
+
+    # Get the inflation data
+    inflation_rate_yoy, delta_mom = get_inflation_data()
+
+    # Create and display the speedometer chart
+    speedometer_chart = create_speedometer(inflation_rate_yoy, delta_mom)
+    st.plotly_chart(speedometer_chart)
+
+if __name__ == "__main__":
+    main()
+
 
 
 def get_stock_industry(symbol):
