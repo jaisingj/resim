@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
 import yahoo_fin.stock_info as si
-import seaborn as sb
 import plotly.express as px
 import plotly.graph_objs as go
 import json
