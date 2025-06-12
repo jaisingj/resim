@@ -30,6 +30,7 @@ from pathlib import Path
 from pandas_datareader import data as pdr
 from jinja2 import Environment, select_autoescape, FileSystemLoader
 from pytz import timezone
+from scipy.stats import iqr
 from pandas.tseries.offsets import BDay
 from functions import apply_custom_css, custom_css, clear_multi, get_color, get_float_value,  get_info,get_stock_industry, calculate_tier, color_cells, color_tiers, hint, apply_custom_css, generate_charts,create_download_link, get_news_yahoo, score_news,to_excel, simulate_future_value, display_stock_info , get_trade_open, get_table_download_link, display_current_price,get_stock_info, get_stock_industry,  get_last_price
 from datetime import datetime, timedelta
