@@ -5,14 +5,14 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
-import talib
+import ta
 import requests
 from io import BytesIO
 from bs4 import BeautifulSoup
 from datetime import datetime
 from imports import *
 import base64
-#import pandas_ta as ta
+import pandas_ta as pta
 from plotly.subplots import make_subplots
 from pandas.tseries.offsets import BDay
 from app import get_news_yahoo, score_news, color_cells
@@ -223,11 +223,11 @@ def calculate_technical_indicators(df):
     df = df.dropna(subset=['close'])
 
     if len(df) > 26:
-        df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(df['close'], 12, 26, 9)
+        df['macd'], df['macd_signal'], df['macd_hist'] = ta.MACD(df['close'], 12, 26, 9)
     if len(df) > 14:
-        df['rsi'] = talib.RSI(df['close'], 14)
+        df['rsi'] = ta.RSI(df['close'], 14)
     if len(df) > 20:
-        bb_upper, bb_middle, bb_lower = talib.BBANDS(df['close'], timeperiod=20)
+        bb_upper, bb_middle, bb_lower = ta.BBANDS(df['close'], timeperiod=20)
         df['bb_upper'] = bb_upper
         df['bb_middle'] = bb_middle
         df['bb_lower'] = bb_lower
