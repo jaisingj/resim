@@ -11,7 +11,6 @@ from io import BytesIO
 from ta.trend import MACD
 from bs4 import BeautifulSoup
 from datetime import datetime
-from imports import *
 import base64
 import pandas_ta as ta
 from plotly.subplots import make_subplots
