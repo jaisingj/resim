@@ -8,11 +8,12 @@ import time
 import ta
 import requests
 from io import BytesIO
+from ta.trend import MACD
 from bs4 import BeautifulSoup
 from datetime import datetime
 from imports import *
 import base64
-import pandas_ta as pta
+import pandas_ta as ta
 from plotly.subplots import make_subplots
 from pandas.tseries.offsets import BDay
 from app import get_news_yahoo, score_news, color_cells
@@ -223,7 +224,7 @@ def calculate_technical_indicators(df):
     df = df.dropna(subset=['close'])
 
     if len(df) > 26:
-        df['macd'], df['macd_signal'], df['macd_hist'] = ta.MACD(df['close'], 12, 26, 9)
+        macd = MACD(close=df['close'], window_slow=26, window_fast=12, window_sign=9)
     if len(df) > 14:
         df['rsi'] = ta.RSI(df['close'], 14)
     if len(df) > 20:
