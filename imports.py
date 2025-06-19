@@ -47,7 +47,7 @@ from ta.trend import MACD
 from ta.momentum import StochasticOscillator
 from plotly.subplots import make_subplots
 from urllib.request import urlopen
-from IPython.display import display
+#from IPython.display import display
 from typing import Dict
 #from st_on_hover_tabs import on_hover_tabs
 from matplotlib.backends.backend_agg import FigureCanvasAgg
