@@ -27,5 +27,5 @@ transformers
 tqdm
 tweepy
 yahoo_fin
-yfinance
+yfinance>=0.2.28
 xlsxwriter
