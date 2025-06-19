@@ -29,3 +29,4 @@ tweepy
 yahoo_fin
 yfinance>=0.2.28
 xlsxwriter
+websockets==10.4
