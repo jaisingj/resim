@@ -1,3 +1,4 @@
+import pandas as pd
 from imports import *
 from pandas.tseries.offsets import BDay
 from app import get_news_yahoo, score_news, color_cells

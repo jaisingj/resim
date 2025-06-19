@@ -1,6 +1,7 @@
 import streamlit as st
 import replicate
 import os
+import pandas as pd
 
 # App title
 def run_llama_chat():

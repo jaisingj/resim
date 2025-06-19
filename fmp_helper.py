@@ -1,4 +1,4 @@
-
+import pandas as pd
 import requests
 
 def fetch_stock_history_fmp(ticker, start_date, end_date):

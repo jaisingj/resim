@@ -26,6 +26,10 @@ from fmp_helper import fetch_stock_history_fmp
 
 api_key = st.secrets["fmp"]["api_key"]
 
+if "has_refreshed" not in st.session_state:
+    st.session_state.has_refreshed = True
+    st.rerun()
+
 # Check if 'selected_ticker' exists in session state, and initialize it if not
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = None  # You can set the initial value to None or any other suitable value
@@ -34,10 +38,10 @@ if 'selected_ticker' not in st.session_state:
 
 hint_text = ""
 
+
+
 # Add a sidebar with a radio button selection for navigation
 page = st.sidebar.radio("Choose one", ['Analysis', 'ChatBot','Custom Listings','Sectors','FAQ'])
-
-
 
 
 def hint(text):
@@ -59,16 +63,14 @@ if page == 'Analysis':
         img_str = base64.b64encode(buffered.getvalue()).decode()
         return img_str
 
-
-
     df_tickers = pd.read_csv('tickers.csv')
     options = df_tickers['Symbol'].tolist()
 
     col1, col2, col3, col4 = st.columns([0.5, 0.6, 0.3, 0.3])
 
     with col1:
-       image1 = Image.open('brains.jpeg')
-       st.markdown(f"<img src='data:image/jpeg;base64,{image_to_base64(image1)}' style='max-width:40%; align:left; margin-top: -60px; margin-bottom: 10px;'>", unsafe_allow_html=True)
+        image1 = Image.open('brains.jpeg')
+        st.markdown(f"<img src='data:image/jpeg;base64,{image_to_base64(image1)}' style='max-width:40%; align:left; margin-top: -60px; margin-bottom: 10px;'>", unsafe_allow_html=True)
 
     with col2:
         st.markdown("<h2 style='font-size: 60px; text-align: center; color: navy; margin-top: -80px; margin-bottom: -80px;'>R.e.s.i.M:  2.0</h2>", unsafe_allow_html=True)
@@ -95,13 +97,18 @@ if page == 'Analysis':
     selected_ticker = df_tickers[df_tickers['Name'] == selected_name]['Symbol'].values[0]
     st.session_state.selected_ticker = selected_ticker
 
-
-     # Only display the date range option if neither 'Sentiment and Signal' nor 'Simulator' tabs are selected
+    # Only display the date range option if neither 'Sentiment and Signal' nor 'Simulator' tabs are selected
     if tabs not in ["Sentiment and Signal", "Simulator"]:
-        date_range_option = st.sidebar.radio('Select a date range', ['1D', '1MO', '6MO', '1YR', '3YR','5YR', 'Custom'], key='date_range_option')
+        date_range_option = st.sidebar.radio(
+            'Select a date range',
+            ['1MO', '6MO', '1YR', '3YR', '5YR', 'Custom'],
+            index=2,  # This sets '1YR' as default
+            key='date_range_option'
+        )
 
-    today = pd.Timestamp.now(tz=pytz.timezone('US/Eastern')).normalize()  # Get today's date with timezone
-
+        today = pd.Timestamp.now(tz=pytz.timezone('US/Eastern')).normalize()
+        start_date = today - BDay(1)
+        end_date = today
     # Initialize the interval
     #interval = '1d'  # Default interval for non-1D options
 
@@ -147,19 +154,17 @@ if page == 'Analysis':
     # Now safe to define cache_key
     cache_key = f"{selected_ticker}_{date_range_option}_{interval}"
 
+
  
     if tabs == "Recent Data":
         hint_text = hint("This page shows you all the recent available data and various trends. Based on the Yfinance specifications data is only available in intervals of 1D, 5D, 1WK, 1MO and 3MO (1MO only for MACD)")
 
         st.markdown(f'<div class="title-container" style="margin-top: -4px;"><h3 style="color: navy; font-size: 28px;">Recent Data - {selected_name} {hint_text}</h3></div>', unsafe_allow_html=True)
 
-
-        def update_chart(selected_ticker, start_date, end_date):
-            ticker = yf.Ticker(selected_ticker)
-            ticker_history = fetch_stock_history_fmp(selected_ticker, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-
         formatted_start_date = start_date.strftime("%B %d, %Y")
         formatted_end_date = end_date.strftime("%B %d, %Y")
+
+
 
         # Check if end date is after begin date otherwise present an error message
         if start_date < end_date:
@@ -176,14 +181,13 @@ if page == 'Analysis':
                 try:
                     start_month_year = start_date.strftime("%Y-%b")
                     end_month_year = end_date.strftime("%Y-%b")
-                    start_date_fmt = pd.to_datetime(start_month_year).replace(day=1).strftime("%Y-%m-%d")
-                    end_date_fmt = pd.to_datetime(end_month_year).replace(day=pd.to_datetime(end_date).day).strftime("%Y-%m-%d")
+                    start_date_fmt = pd.to_datetime(start_date).strftime("%Y-%m-%d")
+                    end_date_fmt = pd.to_datetime(end_date).strftime("%Y-%m-%d")
 
-                    ticker = yf.Ticker(selected_ticker)
-                    ticker_history = ticker.history(start=start_date_fmt, end=end_date_fmt)
+                    ticker_history = fetch_stock_history_fmp(selected_ticker, start_date_fmt, end_date_fmt)
 
                     if ticker_history is None or ticker_history.empty:
-                        st.warning("No historical data found for the selected ticker and date range.")
+                        st.write(" ")
                   
                 except Exception as e:
                     st.error(f"Failed to fetch ticker history: {e}")
