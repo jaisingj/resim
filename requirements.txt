@@ -24,3 +24,4 @@ seaborn==0.12.2
 plotly==5.14.1
 pandas_datareader==0.10.0
 pandas_ta==0.3.14b0
+scipy==1.7.3
