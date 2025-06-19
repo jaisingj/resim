@@ -5,7 +5,7 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
-import talib
+#import talib
 import requests
 from io import BytesIO
 from bs4 import BeautifulSoup
