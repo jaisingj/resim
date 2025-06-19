@@ -29,6 +29,7 @@ import xlsxwriter
 from pathlib import Path
 #from vaderSentiment import SentimentIntensityAnalyzer
 from pandas_datareader import data as pdr
+from ta.trend import MACD
 from jinja2 import Environment, select_autoescape, FileSystemLoader
 from pytz import timezone
 from pandas.tseries.offsets import BDay
