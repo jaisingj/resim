@@ -6,10 +6,7 @@ gradio
 matplotlib
 millify
 nltk
-numpy
-pandas
 pandas_datareader
-pandas_ta
 pillow
 pip
 plotly
@@ -30,3 +27,6 @@ yahoo_fin
 yfinance>=0.2.28
 xlsxwriter
 websockets==10.4
+numpy==1.24.4
+pandas==2.0.3
+pandas_ta==0.3.14b0
