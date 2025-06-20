@@ -5,7 +5,7 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
-import ta
+#import ta
 import requests
 from io import BytesIO
 from ta.trend import MACD
@@ -13,6 +13,9 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import base64
 import pandas_ta as ta
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from ta.volatility import BollingerBands
 from plotly.subplots import make_subplots
 from pandas.tseries.offsets import BDay
 from app import get_news_yahoo, score_news, color_cells
@@ -220,17 +223,26 @@ def calculate_technical_indicators(df):
         return df
 
     df['close'] = pd.to_numeric(df['close'], errors='coerce')
-    df = df.dropna(subset=['close'])
+    df.dropna(subset=['close'], inplace=True)
 
+    # MACD (12,26,9)
     if len(df) > 26:
         macd = MACD(close=df['close'], window_slow=26, window_fast=12, window_sign=9)
+        df['macd'] = macd.macd()
+        df['macd_signal'] = macd.macd_signal()
+        df['macd_hist'] = macd.macd_diff()
+
+    # RSI (14)
     if len(df) > 14:
-        df['rsi'] = ta.RSI(df['close'], 14)
+        rsi = RSIIndicator(close=df['close'], window=14)
+        df['rsi'] = rsi.rsi()
+
+    # Bollinger Bands (20)
     if len(df) > 20:
-        bb_upper, bb_middle, bb_lower = ta.BBANDS(df['close'], timeperiod=20)
-        df['bb_upper'] = bb_upper
-        df['bb_middle'] = bb_middle
-        df['bb_lower'] = bb_lower
+        bb = BollingerBands(close=df['close'], window=20, window_dev=2)
+        df['bb_upper'] = bb.bollinger_hband()
+        df['bb_middle'] = bb.bollinger_mavg()
+        df['bb_lower'] = bb.bollinger_lband()
 
     return df
 
@@ -257,6 +269,7 @@ def create_rsi_chart(df):
     fig.update_layout(title='RSI (14)', height=300, yaxis_range=[0, 100],
                       margin=dict(l=20, r=20, t=40, b=20))
     return fig
+	
 # ─────────────────────────────
 # Chart Generator
 # ─────────────────────────────
