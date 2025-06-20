@@ -69,8 +69,6 @@ def change_progress_bar_color():
         unsafe_allow_html=True
     )
 
-
-
 def create_download_link(data, filename):
     csv = data.to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()
