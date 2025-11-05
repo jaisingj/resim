@@ -29,5 +29,5 @@ xlsxwriter
 websockets==10.4
 numpy==1.24.4
 pandas==2.0.3
-pandas_ta>=0.3.14b0
-
+pandas_ta>=0.4.71b0
+ 
