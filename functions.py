@@ -5,6 +5,7 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
+import pandas_ta as ta
 #import ta
 import requests
 from io import BytesIO
