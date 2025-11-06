@@ -5,16 +5,14 @@ import yfinance as yf
 import datetime as dt
 import threading  # Import threading module
 import time
-import pandas_ta as ta
 #import ta
 import requests
 from io import BytesIO
-from ta.trend import MACD
 from bs4 import BeautifulSoup
 from datetime import datetime
 import base64
-from ta.momentum import RSIIndicator
 from ta.trend import MACD
+from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands
 from plotly.subplots import make_subplots
 from pandas.tseries.offsets import BDay
@@ -594,9 +592,9 @@ def display_revenue_growth(revenue_growth):
 
 def to_excel(df):
     output = BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, sheet_name='Sheet1', index=False)
-    writer.close()  # This is the correct method to finalize the Excel file
+    # Use context manager for pandas 2.0+ compatibility
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='Sheet1', index=False)
     processed_data = output.getvalue()
     return processed_data
 
@@ -615,7 +613,8 @@ def plot_last_30_days_sentiment(selected_ticker, start_date):
     end_date = dt.datetime.now()
     start_date = end_date - dt.timedelta(days=30)
 
-    #data = yf.download(selected_ticker, start=start)
+    # Download stock data for the selected ticker
+    data = yf.download(selected_ticker, start=start_date, end=end_date)
     
     # Retrieve and score news data
     news_table = get_news_yahoo(st.session_state.selected_ticker)
@@ -650,14 +649,30 @@ def plot_last_30_days_sentiment(selected_ticker, start_date):
     Buy_Option = [d.date() for i, d in extreme_score.iterrows() if d['Final_Score'] > 0.3]
     Sell_Option = [d.date() for i, d in extreme_score.iterrows() if d['Final_Score'] < 0.3]
     
+    # Check if data is available
+    if data.empty:
+        st.warning("No stock data available for sentiment plotting.")
+        return
+    
+    # Use iloc for better pandas compatibility
     vader_buy = [i for i in range(len(data)) if data.index[i].date() in Buy_Option]
     vader_sell = [i for i in range(len(data)) if data.index[i].date() in Sell_Option]
     
     # Create the plot for the last 30 days
     fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=data.index[-30:], y=data['Adj Close'][-30:], mode='lines', name='Closing Price'))
-    fig2.add_trace(go.Scatter(x=data.index[vader_buy][-30:], y=data.loc[data.index[vader_buy][-30:], 'Adj Close'], mode='markers', name='Buy Signal', marker=dict(color='green', size=8)))
-    fig2.add_trace(go.Scatter(x=data.index[vader_sell][-30:], y=data.loc[data.index[vader_sell][-30:], 'Adj Close'], mode='markers', name='Sell Signal', marker=dict(color='red', size=8)))
+    # Use iloc for pandas 2.0+ compatibility
+    last_30_indices = data.index[-30:] if len(data) >= 30 else data.index
+    fig2.add_trace(go.Scatter(x=last_30_indices, y=data.loc[last_30_indices, 'Adj Close'], mode='lines', name='Closing Price'))
+    if vader_buy:
+        buy_indices = [idx for idx in vader_buy if idx < len(data) and data.index[idx] in last_30_indices]
+        if buy_indices:
+            buy_data_indices = [data.index[i] for i in buy_indices]
+            fig2.add_trace(go.Scatter(x=buy_data_indices, y=data.loc[buy_data_indices, 'Adj Close'], mode='markers', name='Buy Signal', marker=dict(color='green', size=8)))
+    if vader_sell:
+        sell_indices = [idx for idx in vader_sell if idx < len(data) and data.index[idx] in last_30_indices]
+        if sell_indices:
+            sell_data_indices = [data.index[i] for i in sell_indices]
+            fig2.add_trace(go.Scatter(x=sell_data_indices, y=data.loc[sell_data_indices, 'Adj Close'], mode='markers', name='Sell Signal', marker=dict(color='red', size=8)))
     fig2.update_layout(title='Last 30 Days Sentiment Signal', xaxis_title='Date', yaxis_title='Price',
                        legend=dict(orientation="h", y=1.02, x=0.5))
     
@@ -700,7 +715,13 @@ def get_last_price(ticker):
     stock = yf.Ticker(ticker)
     todays_data = stock.history(period='1d')
     historical_data = stock.history(period='2d')
-    return todays_data['Close'][0]
+    # Use iloc for pandas 2.0+ compatibility
+    if not todays_data.empty:
+        return todays_data['Close'].iloc[0]
+    elif not historical_data.empty:
+        return historical_data['Close'].iloc[-1]
+    else:
+        return None
 
 def get_stock_info(ticker):
     url = f"https://finance.yahoo.com/quote/{ticker}"
@@ -793,7 +814,8 @@ def simulate_future_value(symbol, target_percentage, Investment, custom_investme
     stock_info = ticker.history(period="1d")
 
     if not stock_info.empty:
-        current_price = stock_info['Close'][0]
+        # Use iloc for pandas 2.0+ compatibility
+        current_price = stock_info['Close'].iloc[0]
         # Convert the target_percentage to a float
         target_percentage = float(target_percentage)
         target_price = current_price * (1 + (target_percentage/100))  # Calculate the target share price

@@ -15,9 +15,11 @@ import yfinance as yf
 # Download required NLTK data
 nltk.download('vader_lexicon')
 
-# Load tickers from Tickers.csv
 # Load tickers from Tickers.csv (must have columns "Name" and "Symbol")
 df_tickers = pd.read_csv("Tickers.csv")
+
+# Sort the dataframe alphabetically by Name for better dropdown usability
+df_tickers = df_tickers.sort_values(by="Name", ascending=True).reset_index(drop=True)
 
 # Sidebar: Select a company by its Name using a unique key.
 selected_name = st.sidebar.selectbox("Select a company", df_tickers["Name"], key="company_name_select")
@@ -179,7 +181,7 @@ def display_sentiment_data_table(ticker):
         table_data = table_data.head(10)
         styled_table = table_data.style \
             .format({"Score": "{:.2f}"}) \
-            .applymap(color_cells, subset=['Score']) \
+            .map(color_cells, subset=['Score']) \
             .set_table_attributes("class='data-table'") \
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', '#CEDDF1'), ('color', 'black'), ('font-size', '18px')]},
@@ -256,13 +258,15 @@ def display_fig2(selected_ticker):
         for col in ['Min_Score', 'Max_Score', 'Final_Score']:
             extreme_score[col] = pd.to_numeric(extreme_score[col], errors='coerce')
         extreme_score['Date'] = pd.to_datetime(extreme_score['Date']).dt.strftime('%b %d')
-        extreme_score[['Min_Score', 'Max_Score', 'Final_Score']] = extreme_score[['Min_Score', 'Max_Score', 'Final_Score']].applymap("{:.2f}".format)
+        # Format numeric columns (using apply for pandas 2.0+ compatibility)
+        for col in ['Min_Score', 'Max_Score', 'Final_Score']:
+            extreme_score[col] = extreme_score[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else x)
         table = extreme_score.head()
         table = table.style.set_table_styles([
             {'selector': 'th', 'props': [('background-color', '#CEDDF1'), ('color', 'black'), ('font-size', '20px')]},
             {'selector': 'td', 'props': [('font-size', '20px')]}
         ])
-        table = table.applymap(lambda x: f"color: {'green' if float(x) > 0 else 'red'}", subset=['Final_Score'])
+        table = table.map(lambda x: f"color: {'green' if float(x) > 0 else 'red'}", subset=['Final_Score'])
         st.table(table)
     else:
         st.write("No news data available for sentiment-based trading signals.")

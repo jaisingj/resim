@@ -166,10 +166,11 @@ def financial_dashboard_function(selected_name):
     
                 # Slice the income data to only show the selected year and format numbers with millify function
                 income_statement_data = income_statement_data.loc[:, [year]]
-                income_statement_data = income_statement_data.applymap(lambda x: millify(x, precision=2))
+                # Apply millify to each value (using apply for pandas 2.0+ compatibility)
+                income_statement_data = income_statement_data.apply(lambda x: x.apply(lambda y: millify(y, precision=2)))
                             
                 # Apply the color_highlighter function to highlight negative numbers
-                income_statement_data = income_statement_data.style.applymap(color_highlighter)
+                income_statement_data = income_statement_data.style.map(color_highlighter)
     
                 # Style the table headers with black color
                 headers = {

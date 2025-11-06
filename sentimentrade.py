@@ -182,7 +182,9 @@ def display_fig2(selected_ticker):
     
          # Convert the Date column to string format without the timestamp
          extreme_score['Date'] = pd.to_datetime(extreme_score['Date']).dt.strftime('%b %d')
-         extreme_score[['Min_Score', 'Max_Score', 'Final_Score']] = extreme_score[['Min_Score', 'Max_Score', 'Final_Score']].applymap("{:.2f}".format)
+         # Format numeric columns (using apply for pandas 2.0+ compatibility)
+         for col in ['Min_Score', 'Max_Score', 'Final_Score']:
+             extreme_score[col] = extreme_score[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else x)
 
         # Display the extreme scores table with formatted dates
          table = extreme_score.head()
@@ -193,6 +195,6 @@ def display_fig2(selected_ticker):
              'selector': 'td',
              'props': [('font-size', '20px')]
          }])
-         table = table.applymap(lambda x: f"color: {'green' if float(x) > 0 else 'red'}", subset=['Final_Score'])
+         table = table.map(lambda x: f"color: {'green' if float(x) > 0 else 'red'}", subset=['Final_Score'])
     
     st.table(table)
