@@ -14,7 +14,6 @@ import plotly.graph_objs as go
 import json
 import base64
 import tqdm
-import pandas_ta as ta
 import io
 import certifi
 import locale
