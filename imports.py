@@ -25,6 +25,7 @@ import time
 import config
 import nltk
 import xlsxwriter
+import pandas_ta as ta
 from pathlib import Path
 #from vaderSentiment import SentimentIntensityAnalyzer
 from pandas_datareader import data as pdr
