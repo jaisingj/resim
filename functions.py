@@ -12,7 +12,6 @@ from ta.trend import MACD
 from bs4 import BeautifulSoup
 from datetime import datetime
 import base64
-import pandas_ta as ta
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from ta.volatility import BollingerBands
